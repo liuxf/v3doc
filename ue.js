@@ -1,3 +1,6 @@
+/*global _, $, jQuery */
+/*jshint bitwise:true, eqeqeq:true, forin:true, immed:true, latedef:true, newcap:true, undef:true,
+	trailing:true, smarttabs:true, sub:true, browser:true, devel:true, maxlen:150 */
 ;(function(window, undefined){
     var document = window.document;
     var slice = Array.prototype.slice;
@@ -101,7 +104,10 @@
          * @return {[type]}      [description]
          */
         fire:function(fn){
-            return this.fireWith(fn, window);
+            if(_.isFunction(fn)){
+                var args = [].slice.call(arguments, 1);
+                return fn.apply(window, args);
+            }
         },
         /**
          * 执行一个函数，无需判断fn是否为函数，并可传入参数
@@ -518,43 +524,50 @@
     }
     (function() {
         ua.screen.pixelRatio = window.devicePixelRatio || 1;
+        //mobile os
         if (_.str.include(nUA, 'android')) {
             ua.os = 'Android';
             ua.isAndroid = true;
-            ua.osVersion = (nUA.match(/[\/\(; ]Android[\/: ](\d+\.\d+)[\.;\- ]/i) || [0,'0'])[1];
-        } else if (nUA.match(/\(i(?:phone|pod|pad);/i)) {
+            ua.osVersion = (nUA.match(/[\/\(; ]android[\/: ](\d+\.\d)\d*[\.;\- ]/) || [0,'0'])[1];
+        } else if (nUA.match(/\(i(?:phone|pod|pad);/)) {
             ua.os = 'iOS';
             ua.isIOS = true;
-            ua.osVersion = (nUA.match(/[\/; ]OS[\/: _](\d+(?:[\._]\d+)?)[\._; ]/i) || [0,'0'])[1].replace('_', '.');
-            //apple device
+            ua.osVersion = (nUA.match(/[\/; ]os[\/: _](\d+(?:[\._]\d+)?)[\._; ]/) || [0,'0'])[1].replace('_', '.');
+        }
+        //screen
+        if (ua.os === 'Android') {
+            ua.screen.width = (window.outerWidth || 1) / ua.screen.pixelRatio;
+            ua.screen.height = (window.outerHeight || 1) / ua.screen.pixelRatio;
+        } else {
+            ua.screen.width = screen.width || 1;
+            ua.screen.height = screen.height || 1;
+        }
+        ua.screen.size = [ua.screen.width, ua.screen.height];
+        ua.screen.longerSide = _.max(ua.screen.size);
+        ua.screen.shorterSide = _.min(ua.screen.size);
+        ua.screen.aspectRatio = ua.screen.longerSide / ua.screen.shorterSide;
+        //apple device
+        if (ua.isIOS) {
             var sPrd = '';
-            var sModel = ua.screen.pixelRatio > 1 ? '(HD)' : '';
-            if (nUA.match(/\(ipad;/i)) {
+            if (nUA.match(/\(ipad;/)) {
                 sPrd = 'iPad';
                 ua.isIPad = true;
-            } else if (nUA.match(/\(iphone;/i)) {
+            } else if (nUA.match(/\(iphone;/)) {
                 sPrd = 'iPhone';
                 ua.isIPhone = true;
-            } else if (nUA.match(/\(ipod;/i)) {
+            } else if (nUA.match(/\(ipod;/)) {
                 sPrd = 'iPod';
                 ua.isIPod = true;
             }
+            var sModel = ua.screen.pixelRatio > 1 ? '(HD)' : '';
+            if (!ua.isIPad && ua.screen.pixelRatio > 1 && ua.screen.aspectRatio > 1.7) sModel = '(HD+)';  //16:9
             ua.appleDevice = sModel ? sPrd + ' ' + sModel : sPrd;
         }
-        ua.osVersion += _.str.include(ua.osVersion, '.') ? '' : '.0';
-        //screen
-        if (ua.os === 'Android') {
-            ua.screen.width = window.outerWidth / ua.screen.pixelRatio;
-            ua.screen.height = window.outerHeight / ua.screen.pixelRatio;
-        } else {
-            ua.screen.width = screen.width || 0;
-            ua.screen.height = screen.height || 0;
-        }
-        ua.screen.longerSide = ua.screen.width > ua.screen.height ? ua.screen.width : ua.screen.height;
         //summary
         if (ua.os === 'Android' || ua.os === 'iOS') {
             ua.isMobileDevice = true;
             ua.mobileDeviceType = ua.type = (ua.screen.longerSide > 640) ? 'pad' : 'phone';
+            ua.osVersion += _.str.include(ua.osVersion, '.') ? '' : '.0';
         }
     }());
     /*
@@ -679,19 +692,31 @@
             return false;
         },
         /**
-         * 美化弹窗提示
-         * @param  {[type]}   msg      提示消息（可传入html）
+         * 美化弹窗提示 - 取消默认3秒自动关闭，扩展参数可定制化
+         * @param  {string / object}   msg      提示消息（可传入html或者定制化的options）
          * @param  {Function} callback 回调函数（在show和hide时都调用，回调函数有一个status状态参数，1代表show，0代表hide）
          * @return {[type]}            [description]
          */
         alert:function(msg, callback){
-            UE.dialog.show({
-                id:'ue-dialog-alert',
-                type:'warn',
-                delay:3000,
-                html:msg,
-                callback: callback
-            });
+            var str1 = '<div style="padding:60px 80px;"><table class="cmDialogLayout"><tbody><tr>';
+            str1 += '<td style="width:65px;"><span class="cmDialogWarn"></span></td>';
+            str1 += '<td class="cmDialogContentWrap">';
+            var str2 = '</td></tr></tbody></table></div>';
+            if(typeof msg === 'string'){
+                UE.dialog.show({
+                    id:'ue-dialog-alert',
+                    type:'warn',
+                    html:str1 + msg + str2,
+                    callback: callback
+                });
+            } else {
+                msg = $.extend({
+                    type:'warn',
+                    callback: callback
+                }, msg, {id:'ue-dialog-alert'});
+                msg.html = str1 + msg.html + str2;
+                UE.dialog.show(msg);
+            }
         },
         /**
          * 只用v2的代码，暂时未实现文本的消息提示，需要考虑下怎样的方式来显示
@@ -1105,7 +1130,7 @@
             if(UE.user.getLoginState()){
                 $.post('/wishlist/index/addByAjax/product/' + id + '/', data, callback, 'json');
             } else {
-                //login popup
+                UE.popup.login();
             }
         },
         addCart:function(id, data, callback){
@@ -1235,6 +1260,15 @@
             }
         }
     });
+    /**
+     * 初始化执行用户登录检查
+     * @param  {[type]} ){ UE.user.ini(); } [description]
+     * @return {[type]}     [description]
+     */
+    $(function(){ UE.user.ini(); });
+    /**
+     * login && register popup
+     */
     _.ns('UE.popup', {
         login:function(){
             this._iniTemplate();
@@ -1303,7 +1337,6 @@
             var tmpl = _.str.tmpBuffer();
             tmpl.add('<div id="login-popup" class="user-login-popup" style="display:none;">');
                 tmpl.add('<div class="popup-wrapper clearfix">');
-                    tmpl.add('<a class="cmAction login-popup-close" href="#popup-login-close">&#215;</a>');
                     tmpl.add('<div class="wrap-left">');
                         tmpl.add('<div class="login-submit">');
                             tmpl.add('<div class="wrap-top">');
@@ -1342,7 +1375,8 @@
                         tmpl.add('<div class="register-submit">');
                             tmpl.add('<div class="wrap-top">');
                                 tmpl.add('<h3>REGISTER</h3>');
-                                tmpl.add('<h4>欢迎您<span class="flag-360">360</span>用户</h4>');
+                                //tmpl.add('<h4>欢迎您<span class="flag-360">360</span>用户</h4>');
+                                tmpl.add('<h4>用户注册</h4>');
                                 tmpl.add('<form id="popup-register-form" action="/customer/account/createpost/" method="post"><table class="register-form"><tbody>');
                                     tmpl.add('<tr><th>邮箱</th><td><input type="text" name="email" id="popup-femail" class="cmText" /></td></tr>');
                                     tmpl.add('<tr><th>用户名</th><td><input type="text" name="fusername" id="popup-fname" class="cmText" /></td></tr>');
@@ -1384,6 +1418,7 @@
                             tmpl.add('</div>');
                         tmpl.add('</div>');
                     tmpl.add('</div>');
+                    tmpl.add('<div></div><a class="cmAction login-popup-close" href="#popup-login-close">&#215;</a>');
                 tmpl.add('</div>');
             tmpl.add('</div>');
             $('body').append(tmpl.join());
@@ -1393,7 +1428,7 @@
      * 用户登录数据处理异步队列
      * @type {[type]}
      */
-    var login_live_callbacks = $.Callbacks('once memory');
+    var login_live_callbacks = $.Callbacks('memory');
     _.ns('UE.popup.login', {
         liveCallback:function(){
             login_live_callbacks.add.apply(login_live_callbacks, arguments);
@@ -1580,17 +1615,27 @@
         var root = this;
         var _queue_hash = {};
         var _queue_show = [];
-        var _defaults = {
-            width:300,
-            height:60
+        /**
+         * 新增wrap方法，用于显示页面中已存在的节点内容
+         * @param  {[type]}   selector [description]
+         * @param  {Function} callback [description]
+         * @return {[type]}            [description]
+         */
+        this.wrap = function(selector, callback){
+            if(typeof selector == 'string') selector = $(selector);
+            return this.show({
+                width: selector.width(),
+                height: selector.height(),
+                html: selector.html(),
+                callback: callback
+            });
         };
         this.show = function(opts){
             _bindClose();
-            opts = $.extend({}, _defaults, opts);
             if(!opts.id){ opts.id = _newGuid(); }
             var dialog = _queue_hash[opts.id];
             if(!dialog) _queue_hash[opts.id] = dialog = new Dialog(opts);
-            dialog.show();
+            dialog.show(opts);
             _pushShowStatus(opts.id);
             return opts.id;
         };
@@ -1599,16 +1644,26 @@
                 _queue_hash[id].hide();
                 _deleteDialogID(id);
             } else {
-                _popHideStatus();
+                return _popHideStatus();
             }
         };
+        /**
+         * 添加到dialog显示队列中，并且隐藏前一个显示的dialog，但不触发前一个dialog的callback
+         * @param  {[type]} id [description]
+         * @return {[type]}    [description]
+         */
         var _pushShowStatus = function(id){
             var prev_id = _queue_show[_queue_show.length - 1];
+            if(id == prev_id) return false;
             if(_queue_hash[prev_id]){ 
                 _queue_hash[prev_id]._hide();
             }
             _queue_show.push(id);
         };
+        /**
+         * 从dialog显示队列中移除当前显示的dialog（即关闭当前dialog），并且显示前一个dialog，但不触发callback
+         * @return {[type]} [description]
+         */
         var _popHideStatus = function(){
             var hide_id = _queue_show.pop();
             var dialog = _queue_hash[hide_id];
@@ -1616,7 +1671,13 @@
             var next_id = _queue_show[_queue_show.length - 1];
             dialog = _queue_hash[next_id];
             if(dialog){ dialog._show(); }
+            return hide_id;
         };
+        /**
+         * 从显示队列中删除指定id的dialog
+         * @param  {[type]} id [description]
+         * @return {[type]}    [description]
+         */
         var _deleteDialogID = function(id){
             $.each(_queue_show, function(i, v){
                 if(v === id){
@@ -1625,6 +1686,10 @@
                 }
             });
         };
+        /**
+         * 创建一个新的dialog_id，并且保证不重复
+         * @return {[type]} [description]
+         */
         var _newGuid = function(){
             var id = _.getRandGuid();
             if(_queue_hash[id]) return _newGuid();
@@ -1637,85 +1702,87 @@
                 }
             });
         });
-        var Dialog = _.newClass({
-            initialize: function(opts){
-                this.options = opts;
-                this.id = opts.id;
-                this.createWrap = _.once(function(){
-                    var html = '<div class="cmDialog" id="' + this.options.id + '" style="display:none;">';
-                    html += '<div class="cmDialogContent">';
-                    html += '<table class="cmDialogLayout"><tbody><tr>';
-                    if(this.options.type == 'warn'){
-                        html += '<td style="width:65px;"><span class="cmDialogWarn"></span></td>';
-                    }
-                    html += '<td class="cmDialogContentWrap">' + this.options.html + '</td>';
-                    html += '</tr></tbody></table>';
-                    html += '<a class="cmAction cmDialogClose" href="#dialog-close"></a>';
-                    html += '</div></div>';
-                    $('body').append(html);
-                });
-            },
-            show:function(){
-                if(!this.status){
-                    this._show();
-                    this.bindDelay();
-                    _.fire(this.options.callback, this.status);
-                }
-            },
-            _show:function(){
-                this.status = 1;
-                this.createWrap();
-                this.clearDelay();
-                $('#' + this.options.id).show();
-                this.resize();
-                UE.mask.show();
-            },
-            hide:function(){
-                if(this.status){
-                    this._hide();
-                    UE.mask.hide();
-                    _.fire(this.options.callback, this.status);
-                }
-            },
-            _hide:function(){
-                this.status = 0;
-                this.clearDelay();
-                $('#' + this.options.id).hide();
-            },
-            resize:function(){
-                var wrap = $('#' + this.options.id);
-                var wrap_content = wrap.find('div.cmDialogContent');
-                var wrap_layout = wrap.find('table.cmDialogLayout');
-                var wrap_width = this.options.width + 110;
-                var wrap_height = this.options.height + 110;
-                wrap_content.css({
-                    'width': this.options.width,
-                    'height': this.options.height
-                });
-                wrap_layout.css({
-                    'width': this.options.width,
-                    'height': this.options.height
-                });
-                wrap.css({
-                    'width': wrap_width,
-                    'height': wrap_height,
-                    'margin-left': - wrap_width / 2,
-                    'margin-top': - wrap_height / 2
-                });
-            },
-            bindDelay:function(){
-                if(this.options.delay){
-                    var that = this;
-                    this.delayTimeID = setTimeout(function(){ that.hide();_deleteDialogID(that.id); }, this.options.delay)
-                }
-            },
-            clearDelay:function(){
-                if(this.delayTimeID) {
-                    clearTimeout(this.delayTimeID);
-                    this.delayTimeID = null;
-                }
+    });
+    var dialog_defaults = {
+        width:450,
+        height:170,
+        html:''
+    };
+    var Dialog = _.newClass({
+        initialize: function(opts){
+            this.options = $.extend({}, dialog_defaults, opts);
+            this.id = '#' + this.options.id;
+        },
+        createWrap: _.once(function(){
+            var html = '<div class="cmDialog" id="' + this.options.id + '" style="display:none;">';
+            html += '<div class="cmDialogWrap">';
+            html += '<div class="cmDialogContent">' + this.options.html + '</div>'
+            html += '<a class="cmAction cmDialogClose" href="#dialog-close"></a>';
+            html += '</div></div>';
+            $('body').append(html);
+        }),
+        show:function(opts){
+            if(!this.status){
+                $.extend(this.options, opts);
+                $(this.id).find('div.cmDialogContent').html(this.options.html);
+                this._show();
+                this.bindDelay();
+                _.fire(this.options.callback, this.status);
             }
-        });
+        },
+        _show:function(){
+            this.status = 1;
+            this.createWrap();
+            this.clearDelay();
+            $(this.id).show();
+            this.resize();
+            UE.mask.show();
+        },
+        hide:function(){
+            if(this.status){
+                this._hide();
+                UE.mask.hide();
+                _.fire(this.options.callback, this.status);
+            }
+        },
+        _hide:function(){
+            this.status = 0;
+            this.clearDelay();
+            $(this.id).hide();
+        },
+        resize:function(){
+            var dialog = $(this.id);
+            var wrap = dialog.find('div.cmDialogWrap');
+            var wrap_content = wrap.find('div.cmDialogContent');
+            var wrap_width = this.options.width + 10;
+            var wrap_height = this.options.height + 10;
+            wrap_content.css({
+                'width': this.options.width,
+                'height': this.options.height
+            });
+            wrap.css({
+                'width': wrap_width,
+                'height': wrap_height
+            });
+            dialog.css({
+                'width': wrap_width,
+                'height': wrap_height,
+                'margin-left': - wrap_width / 2,
+                'margin-top': - wrap_height / 2
+            });
+        },
+        bindDelay:function(){
+            if(this.options.delay){
+                var that = this;
+                this.delayTimeID = setTimeout(function(){ that.hide();_deleteDialogID(that.id); }, this.options.delay)
+            }
+        },
+        clearDelay:function(){
+            if(this.delayTimeID) {
+                clearTimeout(this.delayTimeID);
+                this.delayTimeID = null;
+            }
+        }
     });
     /**************************
     ** namespace UE.loading
@@ -1726,35 +1793,20 @@
         _ini: function () {
             if (!this.isReady) {
                 this.jLoading = $('<div class="cmLoading"></div>').appendTo('body');
-                $(window).resize(function (){
-                    if (UE.loading.isVisible) {
-                        UE.loading._pos();
-                    }
-                });
                 this.isReady = true;
                 this._ini = $.noop;
             }
-        },
-        _pos: function () {
-            var l = (UE.rootElem.clientWidth - this.jLoading.outerWidth())/2;
-            var t = (UE.rootElem.clientHeight * 0.95 - this.jLoading.outerHeight())/2;
-            l = (l < 0) ? 0 : l;
-            t = (t < 0) ? 0 : t;
-            this.jLoading.css({
-                left: l + (document.documentElement.scrollLeft || document.body.scrollLeft) + 'px',
-                top: t + (document.documentElement.scrollTop || document.body.scrollTop) + 'px'
-            });
         },
         show: function () {
             if (this.isVisible) {return false; }
             this._ini();
             UE.fixIE6Select.hide();
-            this._pos();
+            this.jLoading.show();
             this.isVisible = true;
         },
         hide: function () {
             if (!this.isVisible) {return false; }
-            this.jLoading.css({left:'-999px',top:'-999px'});
+            this.jLoading.hide();
             UE.fixIE6Select.show();
             this.isVisible = false;
         }
