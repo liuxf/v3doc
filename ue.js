@@ -127,6 +127,25 @@
          */
         getRandGuid:function(){
             return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        },
+        nsTest:function(ns, fn){
+            if(typeof ns === 'string'){
+                var nss = ns.split('.');
+                var parent = window;
+                var flag = true;
+                if (ns.charAt(0) === '.') {
+                    nss.shift();
+                }
+                while (ns = nss.shift()) {
+                    if(parent[ns]){
+                        parent = parent[ns];
+                    } else {
+                        flag = false;
+                        break;
+                    }
+                }
+                _.fire(fn, flag, ns);
+            }
         }
     });
     /*
@@ -279,6 +298,14 @@
             return obj;
         },
         rmb: '\xA5',
+        autoPriceHTML:function(n){
+            var rmb = this.rmb;
+            return [n < 0 ? '- ' : '', '<samp>', rmb,
+                '<\/samp> ', '<span>',
+                    parseFloat(n).toString().replace(/(\d+)(?=(\d{3})+[\.]?)/g, '$1,'),
+                '<\/span>'
+            ].join('');
+        },
         fullPriceHTML: function(n) {
             var rmb = this.rmb;
             return [
@@ -475,10 +502,10 @@
             var data = {};
             sQuery = sQuery || url.query;
             if(sQuery){
-                var result = sQuery.match(new RegExp("[\?\&][^\?\&]+=[^\?\&]+","g"));
+                var result = sQuery.match(/[^|&]([^?&]*=[^?&]*)/g);
                 if (result) {
                     _.each(result, function(v){
-                        v = v.slice(1).split('=');
+                        v = v.split('=');
                         data[decodeURIComponent(v[0]).toLowerCase()] = decodeURIComponent(v[1]||'');
                     });
                 }
@@ -903,7 +930,11 @@
                     });
                 }
             },
-            create: function () {},
+            create: function () {
+                this.$message = jQuery('<div class="message"></div>');
+                this.$error = jQuery('<p class="error" style="display:none;"></p>').appendTo(this.$message);
+                this.$input.after(this.$message).data('status', 'noActive');
+            },
             config: function () {
                 var key;
                 for (key in this.rules) {
@@ -1048,22 +1079,28 @@
         this.extend = function(){
             $.extend.apply(_fnList, arguments);
         };
-        var bind = function(selector){
-            $(document).on('click', selector, function(e){
-                var name = this.getAttribute('href'), i;
-                if(name && (i=name.indexOf('#')) > -1){
-                    name = name.substr(i+1, name.length);
-                    if(name){
-                        var callback = _fnList[name];
-                        if($.isFunction(callback)){
-                            callback.call(this, e, name);
-                        }
-                    }
-                    e.preventDefault();
-                    return false;
-                }
-            });
-        };
+		var bind = function(selector){
+			$(document.body).on('click', selector, function(e){
+				UE.log('[Action] link clicked.');
+				var name = this.getAttribute('href');
+				name = name.split('#')[1];
+				if (name) {
+					UE.log('[Action] action name is: ' + name);
+					var callback = _fnList[name];
+					if($.isFunction(callback)){
+						UE.log('[Action] callback firing: ' + name);
+						callback.call(this, e, name);
+						UE.log('[Action] callback fired: ' + name);
+					} else {
+						UE.log('[Action] callback not found: ' + name);
+					}
+				} else {
+					UE.log('[Action] link has no action.');
+				}
+                e.preventDefault();
+                return false;
+			});
+		};
         this.bind = bind;
         this.trigger = function(name){
             $('a[href="#' + name + '"]').trigger('click');
@@ -1102,20 +1139,31 @@
      */
     _.ns('UE.loadom', function(){
         var _load_list = {};
+        var _dom_list = {};
         this.extend = function(){
             $.extend.apply(_load_list, arguments);
+            trigger();
         };
-        this.trigger = trigger;
         var trigger = function(id){
-            var callback = _load_list[id];
-            if($.isFunction(callback)){ callback(id); }
+            if(id){
+                var callback = _load_list[id];
+                if($.isFunction(callback) && !_load_list[id].status){ 
+                    _load_list[id].status = 1; 
+                    callback(id);
+                }
+            } else {
+                $.each(_load_list, function(id){
+                    _dom_list[id] && trigger(id);
+                });
+            }
         };
         var bind = function(selector){
             $(selector).each(function(){
                 var id = this.id;
-                if(id){ trigger(id); }
+                if(id){ _dom_list[id]=1;trigger(id); }
             });
         };
+        this.trigger = trigger;
         $(function(){ bind('.load-ajax'); });
     });
     _.ns('UE.ajax', {
@@ -1130,18 +1178,40 @@
             if(UE.user.getLoginState()){
                 $.post('/wishlist/index/addByAjax/product/' + id + '/', data, callback, 'json');
             } else {
+                callback(false);
                 UE.popup.login();
             }
         },
+        /**
+         * 把商品添加至购物车
+         * @param  {[type]}   id       商品id
+         * @param  {[type]}   data     [description]
+         * @param  {Function} callback [description]
+         * @return {[type]}            [description]
+         */
         addCart:function(id, data, callback){
             $.post('/checkout/cart/addByAjax/product/' + id + '/', data, callback, 'json');
         },
         /**
-         * 获取用户收藏夹信息
+         * 返回当前所有激活的品牌数据接口
          * @param  {Function} callback [description]
          * @return {[type]}            [description]
          */
-        getUserFav:function(callback){
+        getBrands:function(callback){
+            $.getJSON('/brand/api/brands/', callback);
+        },
+        /**
+         * UETrace 商品推荐接口
+         * @param  {[type]}   data     [description]
+         * @param  {Function} callback [description]
+         * @return {[type]}            [description]
+         */
+        get_trace_topProduct:function(data, callback){
+            var url = "/catalog/product_uetraceapi/topvpro/";
+            $.each(data, function(k, v){
+                url = url + k + '/' + v + '/';
+            });
+            $.getJSON(url, callback);
         }
     });
     /**
@@ -1267,6 +1337,11 @@
      */
     $(function(){ UE.user.ini(); });
     /**
+     * popup 浮层处理队列
+     * @type {[type]}
+     */
+    var popup_live_callback = $.Callbacks('memory');
+    /**
      * login && register popup
      */
     _.ns('UE.popup', {
@@ -1277,6 +1352,8 @@
                 UE.action.trigger('popup-change-login');
             });
             this._bind();
+            this.status = 'login';
+            popup_live_callback.fire('login');
         },
         register:function(){
             this._iniTemplate();
@@ -1285,15 +1362,31 @@
                 UE.action.trigger('popup-change-register');
             });
             this._bind();
+            this.status = 'register';
+            popup_live_callback.fire('register');
         },
         close:function(){
             $('#login-popup').hide();
             UE.mask.hide();
+            popup_live_callback.fire('close');
+        },
+        liveCallback:function(){
+            popup_live_callback.add.apply(popup_live_callback, arguments);
         },
         _bind:_.once(function(){
             var that = this;
             var popupWrap = $('#login-popup');
             popupWrap.find('input.cmCheckbox').jqCheckbox();
+            /**
+             * 回车提交
+             * @param  {[type]} e [description]
+             * @return {[type]}   [description]
+             */
+            popupWrap.find('input.cmText').on('keydown', function(e){
+                if(e.keyCode == 13){
+                    UE.action.trigger('popup-login');
+                }
+            });
             UE.action.extend({
                 'popup-login-close':function(){
                     UE.popup.close();
@@ -1304,6 +1397,7 @@
                  */
                 'popup-change-login':function(){
                     popupWrap.attr('class','user-login-popup');
+                    this.status = 'login';
                 },
                 /**
                  * 切换至注册popup
@@ -1311,6 +1405,7 @@
                  */
                 'popup-change-register':function(){
                     popupWrap.attr('class','user-register-popup');
+                    this.status = 'register';
                     that.register.bindValid();
                 },
                 'popup-login':function(){
@@ -1367,7 +1462,7 @@
                                 tmpl.add('<a class="cmAction cmBtn" href="#popup-change-login"><span>立刻登录</span></a>');
                             tmpl.add('</div>');
                             tmpl.add('<div class="wrap-bottom event-join-us">');
-                                tmpl.add('<a href="###"><img src="/skin/frontend/uemall_v3/default/images/topic/register/join-us-popup.jpg" /></a>');
+                                tmpl.add('<img src="/skin/frontend/uemall_v3/default/images/topic/register/join-us-popup.jpg" />');
                             tmpl.add('</div>');
                         tmpl.add('</div>');
                     tmpl.add('</div>');
@@ -1375,8 +1470,11 @@
                         tmpl.add('<div class="register-submit">');
                             tmpl.add('<div class="wrap-top">');
                                 tmpl.add('<h3>REGISTER</h3>');
-                                //tmpl.add('<h4>欢迎您<span class="flag-360">360</span>用户</h4>');
-                                tmpl.add('<h4>用户注册</h4>');
+                                if(UE.user.member.utmSource == '360'){
+                                    tmpl.add('<h4>欢迎您<span class="flag-360">360</span>用户</h4>');
+                                } else {
+                                    tmpl.add('<h4>用户注册</h4>');
+                                }
                                 tmpl.add('<form id="popup-register-form" action="/customer/account/createpost/" method="post"><table class="register-form"><tbody>');
                                     tmpl.add('<tr><th>邮箱</th><td><input type="text" name="email" id="popup-femail" class="cmText" /></td></tr>');
                                     tmpl.add('<tr><th>用户名</th><td><input type="text" name="fusername" id="popup-fname" class="cmText" /></td></tr>');
@@ -1384,7 +1482,7 @@
                                     tmpl.add('<tr><th>密码</th><td><input type="password" name="password" id="popup-fpwd" class="cmText" /></td></tr>');
                                     tmpl.add('<tr><th>重复密码</th><td><input type="password" name="confirmation" id="popup-fcpwd" class="cmText" /></td></tr>');
                                     tmpl.add('<tr><th>&nbsp;</th><td><input type="checkbox" class="cmCheckbox" name="is_subscribed" id="e-periodical" checked="checked" value="1" /><label for="e-periodical">希望收到优E网的电子期刊</label></td></tr>');
-                                    tmpl.add('<tr><th>&nbsp;</th><td><input type="checkbox" class="cmCheckbox" name="is_condition" id="ue-provision" checked="checked" value="1" /><label for="ue-provision">已阅读并且同意</label><a class="reg-claim" target="_blank" href="/static/html/claim/claim.html">优E网使用条件</a></td></tr>');
+                                    tmpl.add('<tr><th>&nbsp;</th><td class="popup-reg-cond"><input type="checkbox" class="cmCheckbox" name="is_condition" id="ue-provision" checked="checked" value="1" /><label for="ue-provision">已阅读并且同意</label><a class="reg-claim" target="_blank" href="/static/html/claim/claim.html">优E网使用条件</a></td></tr>');
                                     tmpl.add('<tr><th>&nbsp;</th><td><a class="cmAction cmBtn" href="#popup-register"><span>注册</span></a></td></tr>');
                                 tmpl.add('</tbody></table></form>');
                             tmpl.add('</div>');
@@ -1439,6 +1537,7 @@
             if(this._valid()){
                 var data = this._data_serialize();
                 $.post('/customer/account/loginPostAjax/', data, function(d){
+                    if(!d.status) _.fire(fn);
                     login_live_callbacks.fire(d);
                 }, 'json');
             } else {
@@ -1447,7 +1546,18 @@
         },
         _ini:_.once(function(){
             this.liveCallback(function(d){
-                location.reload();
+                if(d.status){ location.reload(); } else {
+                    /**
+                     * 登陆失败，先隐藏
+                     */
+                    UE.popup.close();
+                    /**
+                     * 提示失败消息，关闭消息框，再打开登录窗口
+                     */
+                    UE.alert(d.msg, function(status){
+                        if(!status) UE.popup.login();
+                    });
+                }
             });
         }),
         _data_serialize:function(){
@@ -1455,8 +1565,8 @@
         },
         _createValid:_.once(function(){
             this._valid_list = {
-                id: new UE.Validation('#popup-name', {required: [true, '']}),
-                pass: new UE.Validation('#popup-pwd', {required: [true, '']})
+                id: new UE.Validation('#popup-name', {required: [true, '不能为空']}),
+                pass: new UE.Validation('#popup-pwd', {required: [true, '不能为空']})
             };
         }),
         _valid:function(){
@@ -1561,21 +1671,51 @@
                 }
             }
             return link || false;
+        },
+        action:{
+            weibo:{
+                link:'http://service.weibo.com/share/share.php',
+                data:{url:'url',title:'title',pic:'pic',appkey:'2264487147',ralateUid:'',language:'zh_cn'}
+            },
+            kaixin:{
+                link:'http://www.kaixin001.com/rest/records.php',
+                data:{url:'url',content:'title',pic:'pic',starid:'0',aid:'0',style:'11',stime:'',sig:''}
+            },
+            renren:{
+                link:'http://widget.renren.com/dialog/share',
+                data:{resourceUrl:'url',title:'title',images:'pic',charset:'UTF-8'}
+            }
+        },
+        options:{url:location.href, title:document.title, pic:''},
+        share:function(type, data){
+            if(type && this.action[type]){
+                var f = this.action[type];
+                var params = [];
+                data = data ? $.extend({}, this.options, data) : this.options;
+                $.each(f.data, function(k, v){
+                    var val = typeof data[v] == 'undefined' ? v : data[v];
+                    params.push(k+'='+encodeURIComponent(val));
+                });
+                window.open(f.link + '?' + params.join('&'), '_blank');
+            }
         }
     });
     /**************************
     ** namespace UE.mask
     **************************/
     _.ns('UE.mask', {
-        _ini:function(){
+        _ini:_.once(function(){
             var that = this;
             this.jMask = $('<div class="cmMask"></div>').appendTo('body');
+            /**
+             * hack ie6 for select bug
+             */
+            this.jMask.bgIframe();
             $(window).resize(function () {
                 that._pos();
             });
             this.isReady = true;
-            this._ini = $.noop;
-        },
+        }),
         _pos: function () {
             if (this.isVisible) {
                 this.jMask.css({
@@ -1587,13 +1727,10 @@
         show:function(callback){
             if (this.isVisible) { return false; }
             this._ini();
-            UE.fixIE6Select.hide(function(select){
-                return select.not('.cmDialogReady select');
-            });
             this.jMask.css('visibility', 'visible');
             this.isVisible = true;
             this._pos();
-            if ($.isFunction(callback)) { callback(); }
+            _.fire.apply(_, arguments);
         },
         hide:function(callback){
             if (!this.isVisible) { return false; }
@@ -1602,9 +1739,8 @@
                 width: '0',
                 height: '0'
             });
-            UE.fixIE6Select.show();
             this.isVisible = false;
-            if ($.isFunction(callback)) { callback(); }
+            _.fire.apply(_, arguments);
         }
     });
     /**
@@ -1619,16 +1755,33 @@
          * 新增wrap方法，用于显示页面中已存在的节点内容
          * @param  {[type]}   selector [description]
          * @param  {Function} callback [description]
+         * @param {undefined} id        无意义，仅作变量使用
          * @return {[type]}            [description]
          */
-        this.wrap = function(selector, callback){
+        this.wrap = function(selector, callback, id){
             if(typeof selector == 'string') selector = $(selector);
-            return this.show({
-                width: selector.width(),
-                height: selector.height(),
-                html: selector.html(),
-                callback: callback
-            });
+            if(id = selector.attr('dialog_id')){
+                this.show({id:id, html:'', callback: callback});
+            } else {
+                var width = selector.width() + 
+                    (parseFloat(selector.css('padding-left'))||0) + 
+                    (parseFloat(selector.css('padding-right'))||0) + 
+                    (parseFloat(selector.css('margin-left'))||0) +
+                    (parseFloat(selector.css('margin-right'))||0);
+                var height = selector.height() + 
+                    (parseFloat(selector.css('padding-top'))||0) + 
+                    (parseFloat(selector.css('padding-bottom'))||0) + 
+                    (parseFloat(selector.css('margin-top'))||0) +
+                    (parseFloat(selector.css('margin-bottom'))||0);
+                id = this.show({
+                    width: width,
+                    height: height,
+                    html: '<div class="temp_dialog_wrap"></div>',
+                    callback: callback
+                });
+                selector.attr('dialog_id', id).show().appendTo('#'+id+' div.temp_dialog_wrap');
+            }
+            return id;
         };
         this.show = function(opts){
             _bindClose();
@@ -1639,13 +1792,26 @@
             _pushShowStatus(opts.id);
             return opts.id;
         };
-        this.hide = function(id){
+        this.hide = function(id, isMask){
             if(id && _queue_hash[id]){
-                _queue_hash[id].hide();
-                _deleteDialogID(id);
+                _queue_hash[id].hide(isMask);
+                this._deleteDialogID(id);
             } else {
                 return _popHideStatus();
             }
+        };
+        /**
+         * 从显示队列中删除指定id的dialog
+         * @param  {[type]} id [description]
+         * @return {[type]}    [description]
+         */
+        this._deleteDialogID = function(id){
+            $.each(_queue_show, function(i, v){
+                if(v === id){
+                    _queue_show.splice(i, 1);
+                    return false;
+                }
+            });
         };
         /**
          * 添加到dialog显示队列中，并且隐藏前一个显示的dialog，但不触发前一个dialog的callback
@@ -1674,19 +1840,6 @@
             return hide_id;
         };
         /**
-         * 从显示队列中删除指定id的dialog
-         * @param  {[type]} id [description]
-         * @return {[type]}    [description]
-         */
-        var _deleteDialogID = function(id){
-            $.each(_queue_show, function(i, v){
-                if(v === id){
-                    _queue_show.splice(i, 1);
-                    return false;
-                }
-            });
-        };
-        /**
          * 创建一个新的dialog_id，并且保证不重复
          * @return {[type]} [description]
          */
@@ -1704,6 +1857,7 @@
         });
     });
     var dialog_defaults = {
+        mask:true,
         width:450,
         height:170,
         html:''
@@ -1712,19 +1866,24 @@
         initialize: function(opts){
             this.options = $.extend({}, dialog_defaults, opts);
             this.id = '#' + this.options.id;
+            this.isCreateWrap = false;
         },
-        createWrap: _.once(function(){
+        createWrap:function(){
+            if(this.isCreateWrap) return false;
+            this.isCreateWrap = true;
             var html = '<div class="cmDialog" id="' + this.options.id + '" style="display:none;">';
             html += '<div class="cmDialogWrap">';
             html += '<div class="cmDialogContent">' + this.options.html + '</div>'
             html += '<a class="cmAction cmDialogClose" href="#dialog-close"></a>';
             html += '</div></div>';
             $('body').append(html);
-        }),
+        },
         show:function(opts){
             if(!this.status){
                 $.extend(this.options, opts);
-                $(this.id).find('div.cmDialogContent').html(this.options.html);
+                if(this.options.html){
+                    $(this.id).find('div.cmDialogContent').html(this.options.html);
+                }
                 this._show();
                 this.bindDelay();
                 _.fire(this.options.callback, this.status);
@@ -1736,12 +1895,12 @@
             this.clearDelay();
             $(this.id).show();
             this.resize();
-            UE.mask.show();
+            if(this.options.mask) UE.mask.show();
         },
-        hide:function(){
+        hide:function(isMask){
             if(this.status){
                 this._hide();
-                UE.mask.hide();
+                if(isMask==undefined?this.options.mask:isMask) UE.mask.hide();
                 _.fire(this.options.callback, this.status);
             }
         },
@@ -1754,6 +1913,10 @@
             var dialog = $(this.id);
             var wrap = dialog.find('div.cmDialogWrap');
             var wrap_content = wrap.find('div.cmDialogContent');
+            var _height = wrap_content.css('height','auto').height();
+            if(_height > this.options.height){
+                this.options.height = _height;
+            }
             var wrap_width = this.options.width + 10;
             var wrap_height = this.options.height + 10;
             wrap_content.css({
@@ -1761,8 +1924,8 @@
                 'height': this.options.height
             });
             wrap.css({
-                'width': wrap_width,
-                'height': wrap_height
+                'width': this.options.width,
+                'height': this.options.height
             });
             dialog.css({
                 'width': wrap_width,
@@ -1774,13 +1937,18 @@
         bindDelay:function(){
             if(this.options.delay){
                 var that = this;
-                this.delayTimeID = setTimeout(function(){ that.hide();_deleteDialogID(that.id); }, this.options.delay)
+                this.delayTimeID = setTimeout(function(){
+                    that.options.delay = null;
+                    that.hide(); 
+                    UE.dialog._deleteDialogID(that.options.id); 
+                }, this.options.delay)
             }
         },
         clearDelay:function(){
             if(this.delayTimeID) {
                 clearTimeout(this.delayTimeID);
                 this.delayTimeID = null;
+                this.options.delay = null;
             }
         }
     });
@@ -1793,6 +1961,7 @@
         _ini: function () {
             if (!this.isReady) {
                 this.jLoading = $('<div class="cmLoading"></div>').appendTo('body');
+                this.jLoading.bgIframe();
                 this.isReady = true;
                 this._ini = $.noop;
             }
@@ -1800,14 +1969,14 @@
         show: function () {
             if (this.isVisible) {return false; }
             this._ini();
-            UE.fixIE6Select.hide();
             this.jLoading.show();
+            UE.mask.show();
             this.isVisible = true;
         },
         hide: function () {
             if (!this.isVisible) {return false; }
             this.jLoading.hide();
-            UE.fixIE6Select.show();
+            UE.mask.hide();
             this.isVisible = false;
         }
     });
@@ -1907,82 +2076,31 @@
     /**************************
     ** namespace placeholder
     **************************/
-    var options_placeholder = {
-        color: 'graytext',
-        mode: 'auto',
-        opacity: 0.4
-    };
     _.ns('UE.placeholder', {
-        ini: function(obj, options) {
+        ini: function(obj) {
             if (_.isString(obj)) { obj = $(obj); }
-            options = $.extend({}, options_placeholder, options);
-            var isSupportPlaceholder = false;
-            if(options.mode == 'auto'){
-                isSupportPlaceholder = _.support.input.placeholder;
-            }
-            var isSupportInput = _.support.event('input');
+            var isSupportPlaceholder = _.support.input.placeholder;
             obj.each(function(){
                 var input = this;
                 var obj_id = this.id;
                 var obj = $(this);
                 if(!isSupportPlaceholder){
-                    var placeholderText = options.text || obj.attr('placeholder');
-                    obj.data('placeholder', placeholderText);
-                    var fnInput = function(){
-                        if($.trim(this.value) != ''){
-                            label.text('');
-                        }else{
-                            label.text(obj.data('placeholder'));
+                    var placeholder_text = obj.attr('placeholder');
+                    var val = $.trim(input.value);
+                    if(val == ''){
+                        obj.val(placeholder_text).attr('style','color:#52504A;');
+                    }
+                    obj.focus(function(){
+                        if(this.value == placeholder_text){
+                            this.value = "";
+                            obj.removeAttr('style');
                         }
-                    };
-                    var obj_offset = obj.removeAttr('placeholder').offset();
-                    var obj_index = parseInt(obj.css('zIndex'))||0;
-                    var style = $.extend({
-                        'position':'absolute',
-                        'cursor':'text',
-                        'font-size':'14px',
-                        'z-index':obj_index + 1,
-                        'left':obj_offset.left + 3,
-                        'top':obj_offset.top + 2,
-                        'color':options.color
-                    }, options.style);
-                    var label = $('<label'+(obj_id?' for="'+obj_id+'"':'')+'>'+($.trim(input.value)?'':placeholderText)+'</label>').css(style);
-                    if(!obj_id) label.click(function(){obj.focus()});
-                    obj.after(label);
-                    if(options.opacity){
-                        obj.focus(function(){
-                            label.css('opacity', options.opacity);
-                        }).blur(function(){
-                            fnInput.call(this);
-                            label.css('opacity', 1);
-                        }).bind('contextmenu',function(){
-                            obj.trigger('focus');
-                        });
-                    }else{
-                        obj.blur(function(){
-                            fnInput.call(this);
-                            label.css('opacity', 1);
-                        });
-                    }
-                    if(isSupportInput){
-                        obj.bind('input', fnInput);
-                    }else{
-                        obj.keyup(fnInput).bind('paste', fnInput);
-                    }
-                }
-            });
-        },
-        change: function(obj, text) {
-            if (_.isString(obj)) { obj = $(obj); }
-            var isFn = $.isFunction(text);
-            var phText = text;
-            obj.each(function(){
-                var obj = $(this);
-                if(isFn){ phText = text.call(obj); }
-                if(obj.attr('placeholder')){
-                    obj.attr('placeholder', phText);
-                }else{
-                    obj.data('placeholder', phText).next('label').text(phText);
+                    }).blur(function(){
+                        if(this.value == ""){
+                            this.value = placeholder_text;
+                            obj.attr('style','color:#52504A;');
+                        }
+                    });
                 }
             });
         }
